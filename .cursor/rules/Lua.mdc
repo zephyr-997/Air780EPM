@@ -87,4 +87,4 @@ Air780EPM的项目下，Air780EPM\780EPM_1.2_function 和 Air780EPM\demo 内的�
 Air780EPM\project 是用户的工程文件路径
 Air780EPM的项目下，引脚名(GPIO)和引脚号是不一样的概念，请根据 doc\Air780EPM_GPIO_Table.md 的内容进行一样对应
 Air780EPM的项目下，不使用 mcu.altfun 函数来配置引脚的复用而是根据 pin_config\pins_Air780EPM.json 来配置引脚，当需要复用引脚的时候在文件是上方说明复用的引脚，我会手动配置
-
+Air780EPM的项目下，当我让你生成功能函数时优先参考 demo 和 780EPM_1.2_function 下的历程

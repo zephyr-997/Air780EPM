@@ -1,11 +1,15 @@
 -- LuaTools需要PROJECT和VERSION这两个信息
 PROJECT = "project"
-VERSION = "1.0.0"
+VERSION = "100.000.000"
+
+-- PRODUCT_KEY = "t1Hm7tc3xk9Jw4QpDd9A9dMLXD2NSdMW" -- 到 iot.openluat.com 创建项目,获取正确的项目key(刚刚剪切板里的校验码就填这里)
 
 log.info("main", PROJECT, VERSION)
 
 -- sys库是标配
 _G.sys = require("sys")
+--[[特别注意, 使用mqtt库需要下列语句]]
+_G.sysplus = require("sysplus")
 
 -- 引入light模块
 local light = require("light")
@@ -13,6 +17,8 @@ local light = require("light")
 local ds18b20 = require("ds18b20")
 -- 引入hc_sr501模块
 local hc_sr501 = require("hc_sr501")
+-- 引入mqtt模块
+local mqtt_single = require("mqtt_single")
 -- 设置IO电平为3.3V
 -- pm.ioVol(3, 3300)  -- 参数1为3表示设置VDD_EXT电压，参数2为3300表示设置为3.3V (单位: mV)
 pm.ioVol(pm.IOVOL_ALL_GPIO, 3300)--所有IO电平开到3V，适配camera等多种外设
@@ -27,7 +33,7 @@ end
 -- 初始化各模块
 log.info("main", "初始化传感器模块")
 
--- 创建任务：控制灯光PWM输出
+--[[ -- 创建任务：控制灯光PWM输出
 sys.taskInit(function()
     log.info("main", "启动灯光控制任务")
     light.startLightControl()  -- 这个函数内部已有循环，不需要外部再包一层
@@ -57,12 +63,44 @@ sys.taskInit(function()
         log.error("main", "人体感应器初始化失败")
     end
 end)
-
+ ]]
 -- 订阅温度数据
 -- sys.subscribe("TEMPERATURE_DATA", function(temp)
 --     log.info("main", "收到温度数据:", temp, "℃")
 --     -- 这里可以添加对温度数据的处理逻辑
 -- end)
+
+-- 创建任务：mqtt初始化和连接
+sys.taskInit(function()
+    log.info("main", "启动网络连接任务")
+    mqtt_single.connect()  -- 先连接网络
+    
+    log.info("main", "启动mqtt初始化任务")
+    mqtt_single.init()
+end)
+
+-- 分别创建MQTT发布和监控任务
+sys.taskInit(function()
+    -- 等待MQTT连接成功
+    local ret = sys.waitUntil("mqtt_conack")
+    if ret then
+        log.info("main", "启动mqtt发布任务")
+        mqtt_single.publish()
+    else
+        log.error("main", "MQTT连接失败")
+    end
+end)
+
+sys.taskInit(function()
+    -- 等待MQTT连接成功
+    local ret = sys.waitUntil("mqtt_conack")
+    if ret then
+        log.info("main", "启动mqtt内存信息任务")
+        mqtt_single.meminfo()
+    else
+        log.error("main", "MQTT连接失败")
+    end
+end)
 
 -- 发布系统启动完成消息
 sys.timerStart(function()
