@@ -18,8 +18,8 @@ end
 
 -- 请根据实际需求更改gpio编号和上下拉
 
-local inputpin = 24
-local ledpin = 27
+local inputpin = 16
+local ledpin = 31
 
 local input = gpio.setup(inputpin,nil)
 local led = gpio.setup(ledpin, 1)
