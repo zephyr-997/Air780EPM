@@ -33,11 +33,6 @@ end
 -- 初始化各模块
 log.info("main", "初始化传感器模块")
 
- -- 创建任务：控制灯光PWM输出
-sys.taskInit(function()
-    log.info("main", "启动灯光控制任务")
-    light.startLightControl()  -- 这个函数内部已有循环，不需要外部再包一层
-end)
 
 -- 创建任务：DS18B20温度监测
 sys.taskInit(function()
@@ -64,11 +59,7 @@ end)
 --     end
 -- end)
 
--- 订阅温度数据
--- sys.subscribe("TEMPERATURE_DATA", function(temp)
---     log.info("main", "收到温度数据:", temp, "℃")
---     -- 这里可以添加对温度数据的处理逻辑
--- end)
+
 
 -- 创建任务：mqtt初始化和连接
 sys.taskInit(function()
@@ -91,6 +82,17 @@ sys.taskInit(function()
     end
 end)
 
+-- 创建PWM状态定期上报任务
+sys.taskInit(function()
+    -- 等待MQTT连接成功
+    local ret = sys.waitUntil("mqtt_conack")
+    if ret then
+        log.info("main", "启动PWM状态上报任务")
+        mqtt_single.reportStatus()
+    else
+        log.error("main", "MQTT连接失败")
+    end
+end)
 
 -- 打印内存信息，调试时使用
 -- sys.taskInit(function()

@@ -43,7 +43,7 @@ function ds18b20.read_ds18b20(id)
                 return
             end
             if onewire.bit(0) > 0 then
-                log.info("温度转换完成")
+                -- log.info("温度转换完成")
                 break
             end
             sys.wait(10)
@@ -66,7 +66,7 @@ function ds18b20.read_ds18b20(id)
             -- 方法1：使用字符串格式化后再转回数字
             t = tonumber(string.format("%.2f", t))
 
-            log.info("温度：", t)
+            -- log.info("温度：", t)
             
             _G.DS18B20_TEMP = t -- 更新全局变量
         else
@@ -91,9 +91,9 @@ function ds18b20.test_ds18b20()
             if id[0] == 0x28 then
                 crc8c = crypto.crc8(id:query(0,7), 0x31, 0, true)
                 if crc8c == id[7] then
-                    log.info("探测到DS18B20", id:query(0, 7):toHex())
+                    -- log.info("探测到DS18B20", id:query(0, 7):toHex())
                     ds18b20.read_ds18b20(id)
-                    log.info("DS18B20离线，重新探测")
+                    -- log.info("DS18B20离线，重新探测")
                 else
                     log.info("ROM ID CRC校验不对",  mcu.x32(crc8c), mcu.x32(id[7]))
                 end
@@ -101,7 +101,7 @@ function ds18b20.test_ds18b20()
                 log.info("ROM ID不正确", mcu.x32(id[0]))
             end
         end
-        log.info("没有检测到DS18B20, 5秒后重试")
+        -- log.info("没有检测到DS18B20, 5秒后重试")
         sys.wait(5000)
 
     end

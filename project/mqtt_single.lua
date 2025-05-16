@@ -3,7 +3,6 @@
 -- pm.request(pm.LIGHT)
 
 -- 创建mqtt模块
-local mqtt_lib = mqtt  -- 保存全局mqtt库引用，处理了命名空间问题
 local mqtt_single = {}        -- 创建本地模块
 
 --根据自己的服务器修改以下参数
@@ -15,7 +14,9 @@ local user_name = "admin"
 local password = "azsxdcfv97"
 
 local pub_topic = "HA-AIR780EPM-01/01/state" -- .. (mcu.unique_id():toHex()) -- 后面这个是设备id
-local sub_topic = "HA-AIR780EPM-01/01/state" -- .. (mcu.unique_id():toHex())
+local sub_topic = "HA-AIR780EPM-02/1/set" -- .. (mcu.unique_id():toHex())
+local status_topic = "HA-AIR780EPM-03/2/status" 
+local command_topic = "HA-AIR780EPM-03/2/command" 
 -- local topic2 = "/luatos/2"
 -- local topic3 = "/luatos/3"
 
@@ -49,7 +50,7 @@ function mqtt_single.connect()
         w5500.config() --默认是DHCP模式
         w5500.bind(socket.ETH0)
         -- LED = gpio.setup(62, 0, gpio.PULLUP)
-    elseif socket or mqtt_lib then
+    elseif socket or mqtt then
         -- 适配的socket库也OK
         -- 没有其他操作, 单纯给个注释说明
     else
@@ -84,7 +85,7 @@ function mqtt_single.init()
     -- if crypto.cipher_suites then
     --     log.info("cipher", "suites", json.encode(crypto.cipher_suites()))
     -- end
-    if mqtt_lib == nil then
+    if mqtt == nil then
         while 1 do
             sys.wait(1000)
             log.info("bsp", "本bsp未适配mqtt库, 请查证")
@@ -95,7 +96,7 @@ function mqtt_single.init()
     -------- MQTT 演示代码 --------------
     -------------------------------------
 
-    mqttc = mqtt_lib.create(nil, mqtt_host, mqtt_port, mqtt_isssl) -- 创建mqtt客户端
+    mqttc = mqtt.create(nil, mqtt_host, mqtt_port, mqtt_isssl) -- 创建mqtt客户端
 
     mqttc:auth(client_id,user_name,password) -- client_id必填,其余选填
     -- mqttc:keepalive(240) -- 默认值240s
@@ -108,6 +109,7 @@ function mqtt_single.init()
             -- 联上了
             sys.publish("mqtt_conack")
             mqtt_client:subscribe(sub_topic)--单主题订阅
+            mqtt_client:subscribe(command_topic)--订阅命令主题
             -- mqtt_client:subscribe({[topic1]=1,[topic2]=1,[topic3]=1})--多主题订阅
         elseif event == "recv" then
             log.info("mqtt", "downlink", "topic", data, "payload", payload)
@@ -162,25 +164,6 @@ function mqtt_single.publish()
     end
 end
 
--- 以下是演示与uart结合, 简单的mqtt-uart透传实现,不需要就注释掉
--- local uart_id = 1
--- uart.setup(uart_id, 9600)
--- uart.on(uart_id, "receive", function(id, len)
---     local data = ""
---     while 1 do
---         local tmp = uart.read(uart_id)
---         if not tmp or #tmp == 0 then
---             break
---         end
---         data = data .. tmp
---     end
---     log.info("uart", "uart收到数据长度", #data)
---     sys.publish("mqtt_pub", pub_topic, data)
--- end)
--- sys.subscribe("mqtt_payload", function(topic, payload)
---     log.info("uart", "uart发送数据长度", #payload)
---     uart.write(1, payload)
--- end)
 
 -- 打印内存信息
 function mqtt_single.meminfo()
@@ -188,6 +171,182 @@ function mqtt_single.meminfo()
         sys.wait(3000)
         log.info("lua", rtos.meminfo())
         log.info("sys", rtos.meminfo("sys"))
+    end
+end
+
+-- 删除原有的订阅处理函数并替换为新的
+sys.subscribe("mqtt_payload", function(topic, payload)
+    -- 在这里处理接收到的MQTT消息
+    log.info("mqtt", "收到消息", topic, payload)
+    
+    -- 处理新的命令主题消息
+    if topic == command_topic then
+        -- 尝试解析JSON格式的payload
+        local success, data = pcall(json.decode, payload)
+        if success and data then
+            -- 获取light模块
+            local light = require("light")
+            local status_data = {} -- 创建状态数据表
+            
+            -- 处理状态命令
+            if data.state then
+                if data.state == "ON" then
+                    -- 如果同时有亮度值，设置PWM亮度
+                    if data.brightness and type(data.brightness) == "number" then
+                        -- 亮度值范围已是0-100，直接使用
+                        light.pwmOpen(0, data.brightness)
+                        log.info("mqtt", "通过MQTT命令打开PWM，亮度为", data.brightness, "%")
+                        -- 设置状态数据
+                        status_data.state = "ON"
+                        status_data.brightness = data.brightness
+                    else
+                        -- 如果只有开灯命令没有亮度，则设为100%
+                        light.pwmOpen(0, 100)
+                        log.info("mqtt", "通过MQTT命令打开PWM，亮度为100%")
+                        -- 设置状态数据
+                        status_data.state = "ON"
+                        status_data.brightness = 100
+                    end
+                elseif data.state == "OFF" then
+                    -- 获取当前亮度，保存上次的亮度值
+                    local pwm_status = light.pwmGetStatus(0)
+                    local saved_brightness = pwm_status.duty
+                    
+                    -- 使用设置占空比为0的方式代替关闭PWM
+                    local close_result = light.pwmSetDuty(0, 0)
+                    log.info("mqtt", "通过MQTT命令将PWM占空比设为0", close_result and "成功" or "失败")
+                    
+                    -- 无论设置是否成功，都设置状态数据为OFF
+                    status_data.state = "OFF"
+                    status_data.brightness = saved_brightness
+                end
+            elseif data.brightness and type(data.brightness) == "number" then
+                -- 只有亮度值没有状态命令，调整占空比
+                light.pwmSetDuty(0, data.brightness)
+                log.info("mqtt", "仅设置PWM亮度为", data.brightness, "%")
+                
+                -- PWM设置亮度意味着已开启，状态为ON
+                status_data.state = "ON"
+                status_data.brightness = data.brightness
+            end
+            
+            -- 发布状态消息到status_topic
+            if mqttc and mqttc:ready() and next(status_data) ~= nil then
+                local status_json = json.encode(status_data)
+                mqttc:publish(status_topic, status_json, 1)
+                log.info("mqtt", "发送状态反馈", status_json)
+            end
+        else
+            log.warn("mqtt", "JSON解析失败", payload)
+        end
+    -- 检查原有的主题消息
+    elseif topic == sub_topic then
+        -- 尝试解析JSON格式的payload
+        local success, data = pcall(json.decode, payload)
+        if success and data then
+            -- JSON解析成功
+            local light = require("light")
+            local status_data = {} -- 创建状态数据表
+            
+            if data.cmd == "led_on" then
+                -- 打开PWM，100%亮度
+                light.pwmOpen(0, 100)
+                log.info("mqtt", "通过MQTT命令打开PWM，亮度为100%")
+                
+                -- 设置状态数据
+                status_data.state = "ON"
+                status_data.brightness = 100
+            elseif data.cmd == "led_off" then
+                -- 获取当前亮度，保存上次的亮度值
+                local pwm_status = light.pwmGetStatus(0)
+                local saved_brightness = pwm_status.duty
+                
+                -- 使用设置占空比为0的方式代替关闭PWM
+                local close_result = light.pwmSetDuty(0, 0)
+                log.info("mqtt", "通过MQTT命令将PWM占空比设为0", close_result and "成功" or "失败")
+                
+                -- 无论设置是否成功，都设置状态数据为OFF
+                status_data.state = "OFF"
+                status_data.brightness = saved_brightness
+            elseif data.brightness and type(data.brightness) == "number" then
+                -- 设置亮度，直接使用0-100范围值
+                light.pwmSetDuty(0, data.brightness)
+                log.info("mqtt", "设置PWM亮度为", data.brightness, "%")
+                
+                -- 设置状态数据
+                status_data.state = "ON"
+                status_data.brightness = data.brightness
+            end
+            
+            -- 发送状态反馈
+            if mqttc and mqttc:ready() and next(status_data) ~= nil then
+                local status_json = json.encode(status_data)
+                mqttc:publish(status_topic, status_json, 1)
+                log.info("mqtt", "发送状态反馈", status_json)
+            end
+        else
+            -- 非JSON格式，尝试直接匹配内容
+            local light = require("light")
+            local status_data = {} -- 创建状态数据表
+            
+            if payload == "ON" then
+                light.pwmOpen(0, 100)
+                log.info("mqtt", "通过MQTT命令打开PWM，亮度为100%")
+                
+                -- 设置状态数据
+                status_data.state = "ON"
+                status_data.brightness = 100
+            elseif payload == "OFF" then
+                -- 获取当前亮度，保存上次的亮度值
+                local pwm_status = light.pwmGetStatus(0)
+                local saved_brightness = pwm_status.duty
+                
+                -- 使用设置占空比为0的方式代替关闭PWM
+                local close_result = light.pwmSetDuty(0, 0)
+                log.info("mqtt", "通过MQTT命令将PWM占空比设为0", close_result and "成功" or "失败")
+                
+                -- 无论设置是否成功，都设置状态数据为OFF
+                status_data.state = "OFF"
+                status_data.brightness = saved_brightness
+            end
+            
+            -- 发送状态反馈
+            if mqttc and mqttc:ready() and next(status_data) ~= nil then
+                local status_json = json.encode(status_data)
+                mqttc:publish(status_topic, status_json, 1)
+                log.info("mqtt", "发送状态反馈", status_json)
+            end
+        end
+    end
+end)
+
+-- 添加一个状态主动上报函数
+function mqtt_single.reportStatus()
+    sys.wait(5000) -- 等待初始化完成
+    
+    while true do
+        -- 检查MQTT连接是否就绪
+        if mqttc and mqttc:ready() then
+            -- 获取当前PWM状态
+            local light = require("light")
+            local pwm_status = light.pwmGetStatus(0)
+            local status_data = {}
+            
+            -- 判断PWM是否活跃 - 通过pwm状态简单判断
+            -- 这里使用duty值是否为0来粗略判断
+            local is_active = pwm_status.duty > 0
+            
+            -- 设置状态数据
+            status_data.state = is_active and "ON" or "OFF"
+            status_data.brightness = pwm_status.duty
+            
+            -- 发布状态
+            local status_json = json.encode(status_data)
+            mqttc:publish(status_topic, status_json, 1)
+            log.info("mqtt", "定时上报状态", status_json)
+        end
+        
+        sys.wait(60000) -- 每分钟上报一次状态
     end
 end
 
