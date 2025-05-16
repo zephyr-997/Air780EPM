@@ -14,6 +14,7 @@ local user_name = "admin"
 local password = "azsxdcfv97"
 
 local pub0101_topic = "HA-AIR780EPM-01/01/state" -- .. (mcu.unique_id():toHex()) -- 后面这个是设备id
+local pub0102_topic = "HA-AIR780EPM-01/02/state" -- DHT11温湿度数据上报主题
 local relay0201_topic = "HA-AIR780EPM-02/1/set" 
 local relay0202_topic = "HA-AIR780EPM-02/2/set" 
 local status0301_topic = "HA-AIR780EPM-03/1/status" 
@@ -23,8 +24,9 @@ local command0302_topic = "HA-AIR780EPM-03/2/command"
 local status0303_topic = "HA-AIR780EPM-03/3/status" 
 local command0303_topic = "HA-AIR780EPM-03/3/command"
 
-
 local mqttc = nil
+-- 将mqttc作为模块属性公开出去
+mqtt_single.mqttc = nil
 
 -- 定义继电器引脚常量，与light.lua保持一致
 local RELAY_PIN_1 = 30  -- 继电器1引脚
@@ -87,6 +89,7 @@ function mqtt_single.init()
     -- 下发: 设备 <--- 服务器
     -- 可使用mqtt.x等客户端进行调试
     log.info("mqtt", "pub", pub0101_topic)
+    log.info("mqtt", "pub", pub0102_topic, "(DHT11温湿度)")
     log.info("mqtt", "sub", relay0201_topic)
     log.info("mqtt", "sub", relay0202_topic)
     log.info("mqtt", "sub/pub", command0301_topic, status0301_topic)
@@ -109,6 +112,7 @@ function mqtt_single.init()
     -------------------------------------
 
     mqttc = mqtt.create(nil, mqtt_host, mqtt_port, mqtt_isssl) -- 创建mqtt客户端
+    mqtt_single.mqttc = mqttc -- 同步更新公开变量
 
     mqttc:auth(client_id,user_name,password) -- client_id必填,其余选填
     -- mqttc:keepalive(240) -- 默认值240s
@@ -152,28 +156,45 @@ function mqtt_single.init()
     end
     mqttc:close()
     mqttc = nil
+    mqtt_single.mqttc = nil -- 同步更新公开变量
 end
 
 -- 这里演示在另一个task里上报数据, 会定时上报数据,不需要就注释掉
 function mqtt_single.publish()
     sys.wait(1000) 
-	local data = 0
-	local qos = 1 -- QOS0不带puback, QOS1是带puback的
+    local data = 0
+    local qos = 1 -- QOS0不带puback, QOS1是带puback的
     if not _G.DS18B20_TEMP then
         _G.DS18B20_TEMP = 0
     end
+    if not _G.DHT11_TEMP then
+        _G.DHT11_TEMP = 0
+    end
+    if not _G.DHT11_HUMI then
+        _G.DHT11_HUMI = 0
+    end
     while true do
         sys.wait(10000) -- 10s发送一次数据
+        
+        -- 发送DS18B20温度数据
         data = _G.DS18B20_TEMP -- 获取温度数据
         data = string.format("%.2f", data) -- 保留两位小数
         if mqttc and mqttc:ready() then
             -- local pkgid = mqttc:publish(pub0101_topic, data .. os.date(), qos) -- 带时间戳
             local pkgid = mqttc:publish(pub0101_topic, data, qos) -- 不带时间戳
-            -- local pkgid = mqttc:publish(topic2, data, qos)
-            -- local pkgid = mqttc:publish(topic3, data, qos)
-            log.info("mqtt", "已发送温度数据", data, "°C")
+            log.info("mqtt", "已发送DS18B20温度数据", data, "°C")
         else
             log.info("mqtt", "mqtt未连接")
+        end
+        
+        -- 发送DHT11湿度数据
+        if _G.DHT11_HUMI > 0 then
+            -- 直接发送湿度数值
+            local humidity_str = tostring(_G.DHT11_HUMI)
+            if mqttc and mqttc:ready() then
+                mqttc:publish(pub0102_topic, humidity_str, qos)
+                log.info("mqtt", "已发送DHT11湿度数据", "湿度:", _G.DHT11_HUMI, "%")
+            end
         end
     end
 end
@@ -492,6 +513,14 @@ function mqtt_single.reportStatus()
             local status2_json = json.encode(status2_data)
             mqttc:publish(status0303_topic, status2_json, 1)
             log.info("mqtt", "定时上报PWM2状态", status2_json)
+            
+            -- 上报DHT11湿度数据
+            if _G.DHT11_HUMI > 0 then
+                -- 直接发送湿度数值
+                local humidity_str = tostring(_G.DHT11_HUMI)
+                mqttc:publish(pub0102_topic, humidity_str, 1)
+                log.info("mqtt", "定时上报DHT11湿度数据", "湿度:", _G.DHT11_HUMI, "%")
+            end
         end
         
         sys.wait(60000) -- 每分钟上报一次状态

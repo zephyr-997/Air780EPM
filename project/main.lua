@@ -19,9 +19,15 @@ local ds18b20 = require("ds18b20")
 local hc_sr501 = require("hc_sr501")
 -- 引入mqtt模块
 local mqtt_single = require("mqtt_single")
+-- 引入dht11模块
+local dht11 = require("dht11")
 -- 设置IO电平为3.3V
 -- pm.ioVol(3, 3300)  -- 参数1为3表示设置VDD_EXT电压，参数2为3300表示设置为3.3V (单位: mV)
 pm.ioVol(pm.IOVOL_ALL_GPIO, 3300)--所有IO电平开到3V，适配camera等多种外设
+
+-- 温湿度全局变量
+_G.DHT11_TEMP = 0  -- 温度全局变量
+_G.DHT11_HUMI = 0  -- 湿度全局变量
 
 --添加硬狗防止程序卡死，如果任务执行时间过长或者阻塞，会导致喂狗超时
 if wdt then
@@ -54,16 +60,48 @@ sys.taskInit(function()
 end)
 
 -- 创建任务：DS18B20温度监测
-sys.taskInit(function()
-    -- 延迟1秒启动，避免与其他任务初始化冲突
-    sys.wait(1000)
-    log.info("main", "启动DS18B20温度监测任务")
-    if onewire then
-        ds18b20.test_ds18b20()  -- 这个函数内部已有循环，不需要外部再包一层
-    else
-        log.info("no onewire")
-    end
-end)
+-- sys.taskInit(function()
+--     -- 延迟1秒启动，避免与其他任务初始化冲突
+--     sys.wait(1000)
+--     log.info("main", "启动DS18B20温度监测任务")
+--     if onewire then
+--         ds18b20.test_ds18b20()  -- 这个函数内部已有循环，不需要外部再包一层
+--     else
+--         log.info("no onewire")
+--     end
+-- end)
+
+-- 创建任务：DHT11湿度监测
+-- sys.taskInit(function()
+--     -- 延迟1.5秒启动，避免与其他任务初始化冲突
+--     sys.wait(1500)
+--     log.info("main", "启动DHT11湿度监测任务")
+    
+--     -- 初始化DHT11
+--     if not dht11.init() then
+--         log.error("main", "DHT11初始化失败")
+--         return
+--     end
+    
+--     -- 开始周期性读取湿度数据
+--     while true do
+--         -- 读取DHT11数据（不使用CRC校验以提高成功率）
+--         local humidity, temperature = dht11.read()
+        
+--         if humidity then
+--             log.info("main", "DHT11湿度读取成功", "湿度:", humidity, "%")
+--             -- 只更新湿度全局变量
+--             _G.DHT11_HUMI = humidity
+--         else
+--             log.warn("main", "DHT11湿度读取失败")
+--             -- 读取失败时尝试重新初始化
+--             dht11.init()
+--         end
+        
+--         -- 等待10秒再次读取，与MQTT发送间隔保持一致
+--         sys.wait(10000)
+--     end
+-- end)
 
 -- 创建任务：人体感应监测
 -- sys.taskInit(function()
@@ -77,8 +115,6 @@ end)
 --         log.error("main", "人体感应器初始化失败")
 --     end
 -- end)
-
-
 
 -- 创建任务：mqtt初始化和连接
 sys.taskInit(function()
@@ -113,6 +149,7 @@ sys.taskInit(function()
     end
 end)
 
+
 -- 打印内存信息，调试时使用
 -- sys.taskInit(function()
 --     -- 等待MQTT连接成功
@@ -125,13 +162,12 @@ end)
 --     end
 -- end)
 
+
 -- 发布系统启动完成消息
 sys.timerStart(function()
     sys.publish("SYSTEM_READY", true)
     log.info("main", "系统启动完成")
 end, 3000)
-
-
 
 -- 用户代码已结束---------------------------------------------
 -- 结尾总是这一句
