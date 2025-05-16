@@ -33,6 +33,25 @@ end
 -- 初始化各模块
 log.info("main", "初始化传感器模块")
 
+-- 继电器初始化
+sys.taskInit(function()
+    sys.wait(100)  -- 等待100ms，避免与其他初始化冲突
+    -- 初始化继电器并设置为安全状态
+    light.relaySet(false, 30)  -- 继电器1初始关闭
+    light.relaySet(false, 31)  -- 继电器2初始关闭
+    light.relaySet(false, 32)  -- 电机初始关闭
+    log.info("main", "继电器初始化完成")
+end)
+
+-- PWM初始化
+sys.taskInit(function()
+    sys.wait(200)  -- 等待200ms，避免与其他初始化冲突
+    -- 初始化PWM0和PWM1，设置初始占空比为0
+    light.pwmOpen(0, 0)  -- PWM0初始关闭
+    light.pwmOpen(1, 0)  -- PWM1初始关闭
+    light.pwmOpen(2, 0)  -- PWM2初始关闭
+    log.info("main", "PWM初始化完成")
+end)
 
 -- 创建任务：DS18B20温度监测
 sys.taskInit(function()
@@ -111,6 +130,8 @@ sys.timerStart(function()
     sys.publish("SYSTEM_READY", true)
     log.info("main", "系统启动完成")
 end, 3000)
+
+
 
 -- 用户代码已结束---------------------------------------------
 -- 结尾总是这一句

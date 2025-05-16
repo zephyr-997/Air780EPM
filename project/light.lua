@@ -7,12 +7,13 @@ local PWM_ID1 = 1 -- PWM1对应GPIO24
 local PWM_ID2 = 2 -- PWM2对应GPIO25 
 
 -- 继电器引脚
-local relay_pin = 31  -- 定义继电器引脚
+local relay0201_pin = 30  -- 定义继电器引脚
+local relay0202_pin = 31  -- 定义继电器引脚
 
 -- PWM相关私有变量
 local _pwm_initialized = false
 local _current_duty = {}  -- 每个通道的当前占空比（0-100范围）
-local _pwm_freq = 1000  -- PWM频率，默认1kHz
+local _pwm_freq = 50000  -- PWM频率，默认1kHz
 
 -- 继电器相关私有变量
 local _relay_initialized = false
@@ -42,15 +43,99 @@ local function _initPwm()
 end
 
 -- 继电器初始化函数
-local function _initRelay()
+local function _initRelay(pin)
     if not _relay_initialized then
         -- 设置继电器引脚为输出模式
-        gpio.setup(relay_pin, 0, gpio.PULLUP)
+        gpio.setup(relay0201_pin, 0, gpio.PULLUP)
+        gpio.setup(relay0202_pin, 0, gpio.PULLUP)
         log.info("light", "初始化继电器引脚")
         _relay_initialized = true
     end
 end
 
+-- ================ GPIO测试功能 ================
+--[[
+-- GPIO测试函数
+-- 用于测试GPIO30和GPIO31（继电器控制引脚）是否正常工作
+function light.gpioTest()
+    log.info("GPIO测试", "开始测试GPIO30和GPIO31")
+    
+    -- 设置测试参数
+    local pins = {30, 31}  -- 测试的引脚列表
+    local test_cycles = 5  -- 测试循环次数
+    local delay_ms = 500   -- 每次状态变化的延迟时间（毫秒）
+    local results = {}     -- 测试结果存储
+    
+    -- 初始化引脚
+    for _, pin in ipairs(pins) do
+        -- 设置为输出模式，上拉
+        gpio.setup(pin, 0, gpio.PULLUP)
+        gpio.set(pin, 0)  -- 初始状态设为低电平
+        results[pin] = {success = 0, fail = 0}
+        log.info("GPIO测试", "初始化引脚", pin)
+    end
+    
+    -- 执行测试循环
+    for cycle = 1, test_cycles do
+        log.info("GPIO测试", "测试循环", cycle, "/", test_cycles)
+        
+        -- 依次测试每个引脚
+        for _, pin in ipairs(pins) do
+            -- 设置高电平并验证
+            gpio.set(pin, 1)
+            _shortDelay(delay_ms / 2)  -- 等待短暂时间确保稳定
+            local high_result = gpio.get(pin)
+            
+            if high_result == 1 then
+                results[pin].success = results[pin].success + 1
+                log.info("GPIO测试", "引脚", pin, "高电平测试成功")
+            else
+                results[pin].fail = results[pin].fail + 1
+                log.error("GPIO测试", "引脚", pin, "高电平测试失败")
+            end
+            
+            _shortDelay(delay_ms)  -- 延时观察
+            
+            -- 设置低电平并验证
+            gpio.set(pin, 0)
+            _shortDelay(delay_ms / 2)  -- 等待短暂时间确保稳定
+            local low_result = gpio.get(pin)
+            
+            if low_result == 0 then
+                results[pin].success = results[pin].success + 1
+                log.info("GPIO测试", "引脚", pin, "低电平测试成功")
+            else
+                results[pin].fail = results[pin].fail + 1
+                log.error("GPIO测试", "引脚", pin, "低电平测试失败")
+            end
+            
+            _shortDelay(delay_ms)  -- 延时观察
+        end
+    end
+    
+    -- 输出测试结果总结
+    log.info("GPIO测试", "测试完成，结果汇总：")
+    for _, pin in ipairs(pins) do
+        local success_rate = (results[pin].success / (results[pin].success + results[pin].fail)) * 100
+        log.info("GPIO测试", "引脚", pin, "成功率:", string.format("%.1f%%", success_rate), 
+                 "成功:", results[pin].success, "失败:", results[pin].fail)
+        
+        -- 最终判断
+        if results[pin].fail == 0 then
+            log.info("GPIO测试", "引脚", pin, "测试通过")
+        else
+            log.warn("GPIO测试", "引脚", pin, "测试未完全通过，请检查硬件连接")
+        end
+    end
+    
+    -- 测试完成后，重置引脚状态
+    for _, pin in ipairs(pins) do
+        gpio.set(pin, 0)
+    end
+    
+    return results
+end
+]]
 -- ================ PWM控制API ================
 
 -- 打开PWM并设置占空比
@@ -172,40 +257,50 @@ end
 
 -- ================ 继电器控制API ================
 
--- 设置继电器状态
-function light.relaySet(state)
+-- 设置继电器状态，pin可选，默认使用relay0201_pin
+function light.relaySet(state, pin)
     _initRelay()  -- 确保初始化
     
-    gpio.set(relay_pin, state and 1 or 0)
-    log.info("light", "继电器状态已设置为", state and "开启" or "关闭")
+    -- 使用传入的pin或默认值
+    pin = pin or relay0201_pin
+    
+    gpio.set(pin, state and 1 or 0)
+    log.info("light", "继电器状态已设置为", state and "开启" or "关闭", "引脚:", pin)
     return true
 end
 
--- 获取继电器状态
-function light.relayGet()
+-- 获取继电器状态，pin可选，默认使用relay0201_pin
+function light.relayGet(pin)
     _initRelay()  -- 确保初始化
     
-    local state = gpio.get(relay_pin)
+    -- 使用传入的pin或默认值
+    pin = pin or relay0201_pin
+    
+    local state = gpio.get(pin)
     return state == 1
 end
 
--- 切换继电器状态
-function light.relayToggle()
+-- 切换继电器状态，pin可选，默认使用relay0201_pin
+function light.relayToggle(pin)
     _initRelay()  -- 确保初始化
     
-    local current = gpio.get(relay_pin)
-    gpio.set(relay_pin, current == 1 and 0 or 1)
-    log.info("light", "继电器状态已切换为", current == 0 and "开启" or "关闭")
+    -- 使用传入的pin或默认值
+    pin = pin or relay0201_pin
+    
+    local current = gpio.get(pin)
+    gpio.set(pin, current == 1 and 0 or 1)
+    log.info("light", "继电器状态已切换为", current == 0 and "开启" or "关闭", "引脚:", pin)
     return true
 end
 
--- MQTT和其他模块便捷控制接口，以下是模版，使用的时light.control({}) 来控制，使用时建议更改为 light.pwmSetDuty(0, 0) 来关闭PWM （因为light.pwmClose(0) 依旧失败）
+-- MQTT和其他模块便捷控制接口，更新以支持指定继电器
 --[[
 light.control({
     pwm_enable = true,     -- 打开PWM
     pwm_id = 0,            -- 使用PWM0通道
     duty = 70,             -- 设置70%占空比
-    relay = true           -- 同时打开继电器
+    relay = true,          -- 同时打开继电器
+    relay_pin = 30         -- 使用指定的继电器引脚
 }) ]]
 function light.control(params)
     if type(params) ~= "table" then
@@ -215,7 +310,7 @@ function light.control(params)
     
     -- 处理继电器控制
     if params.relay ~= nil then
-        light.relaySet(params.relay)
+        light.relaySet(params.relay, params.relay_pin)
     end
     
     -- 处理PWM控制
