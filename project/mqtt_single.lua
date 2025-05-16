@@ -14,8 +14,8 @@ local client_id = "AIR780EPM"
 local user_name = "admin"
 local password = "azsxdcfv97"
 
-local pub_topic = "/luatos/pub/" .. (mcu.unique_id():toHex())
-local sub_topic = "/luatos/sub/" .. (mcu.unique_id():toHex())
+local pub_topic = "HA-AIR780EPM-01/01/state" -- .. (mcu.unique_id():toHex()) -- 后面这个是设备id
+local sub_topic = "HA-AIR780EPM-01/01/state" -- .. (mcu.unique_id():toHex())
 -- local topic2 = "/luatos/2"
 -- local topic3 = "/luatos/3"
 
@@ -70,8 +70,8 @@ function mqtt_single.init()
     local ret, device_id = sys.waitUntil("net_ready")
     -- 下面的是mqtt的参数均可自行修改
     -- client_id = device_id   -- 设备id   
-    pub_topic = "/luatos/pub/" .. device_id  -- 上报主题
-    sub_topic = "/luatos/sub/" .. device_id  -- 下发主题
+    -- pub_topic = "/luatos/pub/" .. device_id  -- 上报主题
+    -- sub_topic = "/luatos/sub/" .. device_id  -- 下发主题
 
     -- 打印一下上报(pub)和下发(sub)的topic名称
     -- 上报: 设备 ---> 服务器
@@ -140,15 +140,24 @@ end
 
 -- 这里演示在另一个task里上报数据, 会定时上报数据,不需要就注释掉
 function mqtt_single.publish()
-    sys.wait(3000)  -- 3s发送一次数据
-	local data = "123,"
+    sys.wait(1000) 
+	local data = 0
 	local qos = 1 -- QOS0不带puback, QOS1是带puback的
+    if not _G.DS18B20_TEMP then
+        _G.DS18B20_TEMP = 0
+    end
     while true do
-        sys.wait(3000)
+        sys.wait(10000) -- 10s发送一次数据
+        data = _G.DS18B20_TEMP -- 获取温度数据
+        data = string.format("%.2f", data) -- 保留两位小数
         if mqttc and mqttc:ready() then
-            local pkgid = mqttc:publish(pub_topic, data .. os.date(), qos)
+            -- local pkgid = mqttc:publish(pub_topic, data .. os.date(), qos) -- 带时间戳
+            local pkgid = mqttc:publish(pub_topic, data, qos) -- 不带时间戳
             -- local pkgid = mqttc:publish(topic2, data, qos)
             -- local pkgid = mqttc:publish(topic3, data, qos)
+            log.info("mqtt", "已发送温度数据", data, "°C")
+        else
+            log.info("mqtt", "mqtt未连接")
         end
     end
 end
@@ -173,6 +182,7 @@ end
 --     uart.write(1, payload)
 -- end)
 
+-- 打印内存信息
 function mqtt_single.meminfo()
     while true do
         sys.wait(3000)

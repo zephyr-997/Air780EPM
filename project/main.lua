@@ -33,7 +33,7 @@ end
 -- 初始化各模块
 log.info("main", "初始化传感器模块")
 
---[[ -- 创建任务：控制灯光PWM输出
+ -- 创建任务：控制灯光PWM输出
 sys.taskInit(function()
     log.info("main", "启动灯光控制任务")
     light.startLightControl()  -- 这个函数内部已有循环，不需要外部再包一层
@@ -52,18 +52,18 @@ sys.taskInit(function()
 end)
 
 -- 创建任务：人体感应监测
-sys.taskInit(function()
-    -- 延迟2秒启动，避免与其他任务初始化冲突
-    sys.wait(2000)
-    -- 初始化人体感应器
-    if hc_sr501.init() then
-        log.info("main", "启动人体感应监测任务")
-        hc_sr501.start()  -- 这个函数内部已有循环，不需要外部再包一层
-    else
-        log.error("main", "人体感应器初始化失败")
-    end
-end)
- ]]
+-- sys.taskInit(function()
+--     -- 延迟2秒启动，避免与其他任务初始化冲突
+--     sys.wait(2000)
+--     -- 初始化人体感应器
+--     if hc_sr501.init() then
+--         log.info("main", "启动人体感应监测任务")
+--         hc_sr501.start()  -- 这个函数内部已有循环，不需要外部再包一层
+--     else
+--         log.error("main", "人体感应器初始化失败")
+--     end
+-- end)
+
 -- 订阅温度数据
 -- sys.subscribe("TEMPERATURE_DATA", function(temp)
 --     log.info("main", "收到温度数据:", temp, "℃")
@@ -91,16 +91,18 @@ sys.taskInit(function()
     end
 end)
 
-sys.taskInit(function()
-    -- 等待MQTT连接成功
-    local ret = sys.waitUntil("mqtt_conack")
-    if ret then
-        log.info("main", "启动mqtt内存信息任务")
-        mqtt_single.meminfo()
-    else
-        log.error("main", "MQTT连接失败")
-    end
-end)
+
+-- 打印内存信息，调试时使用
+-- sys.taskInit(function()
+--     -- 等待MQTT连接成功
+--     local ret = sys.waitUntil("mqtt_conack")
+--     if ret then
+--         log.info("main", "启动mqtt内存信息任务")
+--         mqtt_single.meminfo()
+--     else
+--         log.error("main", "MQTT连接失败")
+--     end
+-- end)
 
 -- 发布系统启动完成消息
 sys.timerStart(function()

@@ -12,15 +12,18 @@ local ds18b20 = {}
 1. 3.3v在老版本的开发板上没有引脚, 所以需要外接, 一定要确保共地
 2. ONEWIRE功能支持在4个引脚使用, 但硬件通道只有一个, 默认是GPIO2
 3. 如需切换到其他脚, 参考如下切换逻辑, 选其中一种
-
+4. 必须得手动外接4.7k上拉电阻
 mcu.altfun(mcu.ONEWIRE, 0, 17, 4, 0) -- GPIO2, 也就是默认值
 mcu.altfun(mcu.ONEWIRE, 0, 18, 4, 0) -- GPIO3
 mcu.altfun(mcu.ONEWIRE, 0, 22, 4, 0) -- GPIO7
 mcu.altfun(mcu.ONEWIRE, 0, 53, 4, 0) -- GPIO28
 ]]
+
+_G.DS18B20_TEMP = 0 -- 温度全局变量
+
 function ds18b20.read_ds18b20(id)
     local tbuff = zbuff.create(10)
-    local succ,crc8c,range,t
+    local succ,crc8c,range,t    -- 成功，CRC校验，范围，温度
     local rbuff = zbuff.create(9)
     --如果有多个DS18B20,需要带上ID
     tbuff:write(0x55)
@@ -56,10 +59,16 @@ function ds18b20.read_ds18b20(id)
             range = (rbuff[4] >> 5) & 0x03
             -- rbuff[0] = 0xF8
             -- rbuff[1] = 0xFF
-            t = rbuff:query(0,2,false,true)
+            t = rbuff:query(0,2,false,true) -- 读取温度
             t = t * (5000 >> range)
             t = t / 10000
-            log.info(t)
+
+            -- 方法1：使用字符串格式化后再转回数字
+            t = tonumber(string.format("%.2f", t))
+
+            log.info("温度：", t)
+            
+            _G.DS18B20_TEMP = t -- 更新全局变量
         else
             log.info("RAM DATA CRC校验不对",  mcu.x32(crc8c), mcu.x32(rbuff[8]))
             return
