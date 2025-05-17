@@ -1,8 +1,8 @@
 -- LuaTools需要PROJECT和VERSION这两个信息
 PROJECT = "project"
-VERSION = "100.000.000"
+VERSION = "100.000.001"
 
--- PRODUCT_KEY = "t1Hm7tc3xk9Jw4QpDd9A9dMLXD2NSdMW" -- 到 iot.openluat.com 创建项目,获取正确的项目key(刚刚剪切板里的校验码就填这里)
+PRODUCT_KEY = "ay35N95Ww6ZhSExga9MeQTr7L3VHNNhR"-- 到 iot.openluat.com 创建项目,获取正确的项目key(刚刚剪切板里的校验码就填这里)
 
 log.info("main", PROJECT, VERSION)
 
@@ -11,6 +11,8 @@ _G.sys = require("sys")
 --[[特别注意, 使用mqtt库需要下列语句]]
 _G.sysplus = require("sysplus")
 
+-- 引入libfota2模块
+libfota2 = require "libfota2"
 -- 引入light模块
 local light = require("light")
 -- 引入ds18b20模块
@@ -222,8 +224,45 @@ end)
 sys.timerStart(function()
     sys.publish("SYSTEM_READY", true)
     log.info("main", "系统启动完成")
+    log.info("main", "版本号:", VERSION)
 end, 3000)
 
+
+
+-- 获取升级结果的函数
+-- 升级结果的回调函数
+-- 功能:获取fota的回调函数
+-- 参数:
+-- result:number类型
+--   0表示成功
+--   1表示连接失败
+--   2表示url错误
+--   3表示服务器断开
+--   4表示接收报文错误
+--   5表示使用iot平台VERSION需要使用 xxx.yyy.zzz形式
+local function fota_cb(ret)
+    log.info("fota", ret)
+    if ret == 0 then
+        log.info("升级包下载成功,重启模块")
+        rtos.reboot()
+    elseif ret == 1 then
+        log.info("连接失败", "请检查url拼写或服务器配置(是否为内网)")
+    elseif ret == 2 then
+        log.info("url错误", "检查url拼写")
+    elseif ret == 3 then
+        log.info("服务器断开", "检查服务器白名单配置")
+    elseif ret == 4 then
+        log.info("接收报文错误", "检查模块固件或升级包内文件是否正常")
+    elseif ret == 5 then
+        log.info("版本号书写错误", "iot平台版本号需要使用xxx.yyy.zzz形式")
+    else
+        log.info("不是上面几种情况 ret为",ret)
+    end
+end
+
+-- 自动更新 此代码演示为四小时检查一次 可更改时间
+-- sys.timerLoopStart(libfota2.request, 4 * 3600000, fota_cb, ota_opts)
+-- sys.timerLoopStart(libfota2.request, 60000, fota_cb, ota_opts)
 -- 用户代码已结束---------------------------------------------
 -- 结尾总是这一句
 sys.run()
