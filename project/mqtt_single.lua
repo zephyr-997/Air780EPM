@@ -15,6 +15,7 @@ local password = "azsxdcfv97"
 
 local pub0101_topic = "HA-AIR780EPM-01/01/state" -- .. (mcu.unique_id():toHex()) -- 后面这个是设备id
 local pub0102_topic = "HA-AIR780EPM-01/02/state" -- DHT11温湿度数据上报主题
+local pub0103_topic = "HA-AIR780EPM-01/03/state" -- MQ2气体数据上报主题
 local relay0201_topic = "HA-AIR780EPM-02/1/set" 
 local relay0202_topic = "HA-AIR780EPM-02/2/set" 
 local status0301_topic = "HA-AIR780EPM-03/1/status" 
@@ -173,6 +174,9 @@ function mqtt_single.publish()
     if not _G.DHT11_HUMI then
         _G.DHT11_HUMI = 0
     end
+    if not _G.MQ2_GAS_PPM then
+        _G.MQ2_GAS_PPM = 0
+    end
     while true do
         sys.wait(10000) -- 10s发送一次数据
         
@@ -194,6 +198,16 @@ function mqtt_single.publish()
             if mqttc and mqttc:ready() then
                 mqttc:publish(pub0102_topic, humidity_str, qos)
                 log.info("mqtt", "已发送DHT11湿度数据", "湿度:", _G.DHT11_HUMI, "%")
+            end
+        end
+        
+        -- 发送MQ2气体PPM数据
+        if _G.MQ2_GAS_PPM > 0 then
+            -- 直接发送PPM数值
+            local ppm_str = tostring(_G.MQ2_GAS_PPM)
+            if mqttc and mqttc:ready() then
+                mqttc:publish(pub0103_topic, ppm_str, qos)
+                log.info("mqtt", "已发送MQ2气体数据", "浓度:", _G.MQ2_GAS_PPM, "PPM")
             end
         end
     end
@@ -520,6 +534,14 @@ function mqtt_single.reportStatus()
                 local humidity_str = tostring(_G.DHT11_HUMI)
                 mqttc:publish(pub0102_topic, humidity_str, 1)
                 log.info("mqtt", "定时上报DHT11湿度数据", "湿度:", _G.DHT11_HUMI, "%")
+            end
+            
+            -- 上报MQ2气体PPM数据
+            if _G.MQ2_GAS_PPM > 0 then
+                -- 直接发送PPM数值
+                local ppm_str = tostring(_G.MQ2_GAS_PPM)
+                mqttc:publish(pub0103_topic, ppm_str, 1)
+                log.info("mqtt", "定时上报MQ2气体数据", "浓度:", _G.MQ2_GAS_PPM, "PPM")
             end
         end
         

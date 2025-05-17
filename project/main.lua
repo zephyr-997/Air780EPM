@@ -21,6 +21,8 @@ local hc_sr501 = require("hc_sr501")
 local mqtt_single = require("mqtt_single")
 -- 引入dht11模块
 local dht11 = require("dht11")
+-- 引入mq2模块
+local mq2 = require("mq2")
 -- 设置IO电平为3.3V
 -- pm.ioVol(3, 3300)  -- 参数1为3表示设置VDD_EXT电压，参数2为3300表示设置为3.3V (单位: mV)
 pm.ioVol(pm.IOVOL_ALL_GPIO, 3300)--所有IO电平开到3V，适配camera等多种外设
@@ -115,6 +117,59 @@ end)
 --         log.error("main", "人体感应器初始化失败")
 --     end
 -- end)
+
+-- 创建任务：MQ2气体检测
+sys.taskInit(function()
+    -- 延迟2.5秒启动，避免与其他任务初始化冲突
+    sys.wait(2500)
+    log.info("main", "启动MQ2气体检测任务")
+    
+    -- 初始化MQ2传感器
+    if not mq2.init() then
+        log.error("main", "MQ2传感器初始化失败")
+        return
+    end
+    
+    -- 传感器预热
+    log.info("main", "MQ2传感器预热中...")
+    sys.wait(30000)  -- 预热30秒，确保稳定工作
+    log.info("main", "MQ2传感器预热完成")
+    
+    -- 开始气体浓度周期性监测
+    while true do
+        -- 读取气体浓度(取3次平均值)
+        local gas_value = mq2.readAverage(3)
+        
+        if gas_value then
+            -- 气体浓度估算
+            local gas_ppm = mq2.convertToPPM(gas_value)
+            local alert_status = mq2.isAlert()
+            
+            -- 日志记录
+            if alert_status then
+                log.warn("main", "气体浓度异常", gas_value, "mV", "约", gas_ppm, "PPM")
+            else
+                log.info("main", "气体浓度正常", gas_value, "mV", "约", gas_ppm, "PPM")
+            end
+            
+            -- 这里可以添加报警处理逻辑
+            if alert_status then
+                -- 例如: 触发蜂鸣器报警
+                -- buzzer.beep(3)
+                
+                -- 例如: 控制排气扇
+                -- light.relaySet(true, 30)  -- 打开继电器控制排气扇
+            end
+        else
+            log.error("main", "MQ2读取失败，尝试重新初始化")
+            -- 读取失败时尝试重新初始化
+            mq2.init()
+        end
+        
+        -- 等待一段时间再次检测
+        sys.wait(5000)  -- 5秒检测一次
+    end
+end)
 
 -- 创建任务：mqtt初始化和连接
 sys.taskInit(function()
